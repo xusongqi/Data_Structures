@@ -7,7 +7,6 @@
 * 
 * Description:  
 *
-* 现在问题:旋转后树高混乱
 *
 */
 
@@ -140,7 +139,6 @@ Status DeleteNode(AVLTree *node, ElemType key)
 					break;
 				case RH://原来右高，现在左子树-1，所以需要左旋，调整平衡
 					LeftBalance(node);	shorter = true;
-					break;
 			}
 		}
 	}
