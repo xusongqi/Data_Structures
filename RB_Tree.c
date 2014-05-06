@@ -5,7 +5,10 @@
 * 
 * FileName:     RB_Tree.c
 * 
-* Description:  
+* Description:  删除调节出现bug：
+*						第一组实验数据正常
+*						第二组实验数据删除6出错：丢失key[1,2]
+*						第三组实验数据删除1，key大量丢失
 *
 */
 
@@ -29,7 +32,9 @@ typedef struct rbtree
 static RB_Tree RB_Search_Assist(int key, RB_Tree index, RB_Tree * parent_return);	//辅助查询函数
 static RB_Tree RB_Search(int key, RB_Tree index);		//查找函数
 RB_Tree RB_Insert(int key, RB_Tree index);				//插入函数
-static RB_Tree RB_Insert_Rebalance(RB_Tree node, RB_Tree index);	//插入再平衡
+static RB_Tree RB_Insert_Rebalance(RB_Tree node, RB_Tree index);	//插入再平衡函数
+RB_Tree RB_Delete(int key, RB_Tree index);				//删除函数
+static RB_Tree RB_Delete_Rebalance(RB_Tree node, RB_Tree parent, RB_Tree index);	//删除再平衡函数
 static RB_Tree RB_Rotate_Left(RB_Tree node, RB_Tree index);			//左旋
 static RB_Tree RB_Rotate_Right(RB_Tree node, RB_Tree index);		//右旋
 void PreOrder(RB_Tree tree);		//先序输出
@@ -190,6 +195,277 @@ static RB_Tree RB_Insert_Rebalance(RB_Tree node, RB_Tree index)
 	return index;//返回root节点
 }
 
+RB_Tree RB_Delete(int key, RB_Tree index)
+{
+	RB_Tree child,	//当前操作节点的子节点
+			parent, //当前操作节点的父节点
+			old,	//待删节点
+			left,	//当前操作节点的左孩子
+			node;	//当前操作节点
+	_Bool color;
+
+	/*查找待删节点*/
+	if(!(node = RB_Search_Assist(key, index, NULL)))
+	{
+		//若没找到，则返回
+		printf("NOT SUCH A KEY！\n");
+		return index;
+	}
+	//找到待删结点
+	old = node;
+
+	/*若待删结点左右孩子都存在*/
+	if(node->leftChild && node->rightChild)
+	{
+		/*查找待删结点的右枝的最小节点*/
+		node = node->rightChild;
+		//以下循环可以简化为while(node = node->leftChild);
+		while(left = node->leftChild)
+		{
+			node = left;
+		}
+		child = node->rightChild;
+		parent = node->parent;
+		color = node->color;
+
+		/*将替代节点（node）从树上取下*/
+		if(child)//当前节点的右孩子的父亲等于当前节点的父亲
+		{
+			child->parent = parent;
+		}
+		//node的父节点对自己的指针指向node的右孩子
+		if(parent)//若父节点存在：只是为了格式统一.....
+		{
+			if(node == parent->leftChild)
+			{
+				parent->leftChild = child;
+			}
+			else
+			{
+				parent->rightChild = child;
+			}
+		}
+		else
+		{
+			index = child;
+		}
+		//当node为old的右孩子时有效，并将child设为当前的node的右孩子（即原来node的位置，现在为NULL）
+		if(node->parent == old)
+		{
+			parent = node;
+		}
+
+		/*将取下的node节点覆盖掉待删节点（old）*/
+		node->parent = old->parent;
+		node->color  = old->color;
+		node->leftChild = old->leftChild;
+		node->rightChild = old->rightChild;
+		//若old的parent存在
+		if(old->parent)
+		{
+			//old为左子
+			if(old->parent->leftChild == old)
+			{
+				old->parent->leftChild = node;
+			}
+			//old为右子
+			else
+			{
+				old->parent->rightChild = node;
+			}
+		}
+		//若old的parent不存在
+		else
+		{//即old原来为root节点，现在node成为新的root点
+			index = node;
+		}
+		old->leftChild->parent = node;
+		//需要判断一下rightChild是否为NULL,否则会内存出错
+		if(old->rightChild)
+		{
+			old->rightChild->parent = node;
+		}
+	}//[old的左右孩子都存在]结束
+
+	/*若待删结点的左右孩子至少有一个为空*/
+	else//(!node->left)||(!node->right)
+	{
+		//左孩子为空
+		if(!node->leftChild)
+		{
+			child = node->rightChild;
+		}
+		//右孩子为空
+		else if(!node->rightChild)
+		{
+			child = node->leftChild;
+		}
+		parent = node->parent;
+		color = node->color;
+
+		/*将待删结点删掉*/
+		if(child)	//若孩子节点存在
+		{
+			child->parent = parent;
+		}
+		if(parent)
+		{
+			if(parent->leftChild == node)
+			{
+				parent->leftChild = child;
+			}
+			else//parent->rightChild == node
+			{
+				parent->rightChild = child;
+			}
+		}
+		else//old为原root，现在node成为新的root。该情况仅限树中存在old与child....
+		{
+			index = child;
+		}
+	}//[else:待删结点的孩子至少有一个为空]结束
+	/*释放待删结点*/
+	free(old);
+	old = NULL;
+	/*若删掉的节点颜色为黑色,需要进入插入再平衡函数调节*/
+	if(color == BLACK)
+	{
+		index = RB_Delete_Rebalance(child, parent, index);
+	}
+
+	return index;
+}
+
+/*删除再平衡函数*/
+static RB_Tree RB_Delete_Rebalance(RB_Tree node, RB_Tree parent, RB_Tree index)
+{
+	RB_Tree brother;//节点的兄弟
+
+	/*开始循环调整，以下四种情况，当前节点(node)均为黑色*/
+	while((!node || node->color == BLACK) && node != index)
+	{
+		/*当前节点为父节点的左子*/
+		if(parent->leftChild == node)
+		{
+			brother = parent->rightChild;
+
+			/*情况一:兄弟节点为红色
+			 *解决办法：父节点变红，兄弟节点变黑，左旋父节点
+			 * */
+			if(brother->color == RED)
+			{
+				parent->color = RED;
+				brother->color = BLACK;
+				index = RB_Rotate_Left(parent, index);
+			}
+			else//以下是brother颜色为黑的三种情况
+			{
+				/*情况二：兄弟节点为黑，兄弟节点的两个子节点也为黑
+				*解决办法：先将兄弟节点变红，然后根据父节点：
+							1.若父节点为黑，父节点成为当前节点，继续算法
+							2.若父节点为红，将父节点变黑。树平衡，结束算法
+				 * */
+				if( (!brother->leftChild || brother->leftChild->color == BLACK) &&
+					(!brother->rightChild || brother->rightChild->color == BLACK) )
+				{
+					brother->color = RED;
+					//若父节点为红，变为黑，结束算法
+					if(parent->color == RED)
+					{
+						parent->color = BLACK;
+						break;
+					}
+					node = parent;//父节点成为新的当前节点(父节点原即为黑)
+					parent = node->parent;
+					continue;//重新进入算法循环
+				}
+				/*情况三：兄弟节点为黑，兄弟节点的左孩子为红，右孩子为黑
+				 *解决办法：将兄弟节点染红，兄弟节点的左孩子染黑，右旋兄弟节点
+				 * */
+				if( (brother->leftChild && brother->leftChild->color == RED) && 
+					(!brother->rightChild || brother->rightChild->color == BLACK))
+				{
+					brother->color = RED;
+					brother->leftChild->color = BLACK;
+					index = RB_Rotate_Right(brother, index);
+				}
+				/*情况四：兄弟节点为黑，兄弟节点的右孩子为红，左孩子颜色任意
+				 *解决办法：兄弟节点染成父节点的颜色，父节点染黑，兄弟节点的右孩子染黑，左旋父节点。树平衡，算法结束
+				 * */
+				brother->color = parent->color;
+				parent->color = BLACK;
+				brother->rightChild->color = BLACK;//此时该节点原本颜色一定为红色
+				index = RB_Rotate_Left(parent, index);
+				node = index;
+			}//[else:bro为黑]结束
+		}//[if:node为父节点左孩子]结束
+
+		/*当前节点为父节点右孩子*/
+		else
+		{
+			brother = parent->leftChild;
+
+			/*情况一：兄弟节点为红
+			 *解决办法：父节点染红，兄弟节点染黑，右旋父节点
+			 * */
+			if(brother->color == RED)
+			{
+				parent->color = RED;
+				brother->color = BLACK;
+				index = RB_Rotate_Right(parent, index);
+			}
+			/*以下三种情况，兄弟节点均为黑色*/
+			else
+			{
+				/*情况二：兄弟节点为黑，兄弟节点的两个字节点也为黑
+				*解决办法：先将兄弟节点变红，然后根据父节点：
+							1.若父节点为黑，父节点成为当前节点，继续算法
+							2.若父节点为红，将父节点变黑。树平衡，结束算法
+				 * */
+				if( (!brother->leftChild ||brother->leftChild->color == BLACK) && 
+					(!brother->rightChild || brother->rightChild->color == BLACK))
+				{
+					brother->color = RED;
+					//若父节点为红，染黑，树即平衡。
+					if(parent->color == RED)
+					{
+						parent->color = BLACK;
+						break;
+					}
+					node = parent;//父节点成为新的当前节点（父节点原来即黑色）
+					parent = node->parent;
+					continue;//重新进入算法循环
+				}
+				/*情况三：兄弟节点为黑，兄弟节点的右孩子为红，左孩子为黑
+				 *解决办法：兄弟节点变红，兄弟节点的右孩子变黑，左旋兄弟节点
+				 * */
+				if( (brother->rightChild && brother->rightChild->color == RED) &&
+					(!brother->leftChild || brother->leftChild->color == BLACK))
+				{
+					brother->color = RED;
+					brother->rightChild->color = BLACK;
+					index = RB_Rotate_Left(brother, index);
+				}
+				/*情况四：兄弟节点为黑，兄弟节点的左孩子为红，右孩子颜色任意
+				 *解决办法：兄弟节点染成父节点颜色，父节点染黑，兄弟节点的左孩子染黑，右旋父节点
+				 * */
+				brother->color = parent->color;
+				parent->color = BLACK;
+				brother->color = BLACK;
+				index = RB_Rotate_Right(parent, index);
+			}//[else:兄弟节点为黑]结束
+		}//[else:node为父节点右孩子]结束
+	}//[while:删除再平衡算法]结束
+
+	/*将root点的颜色置为黑色*/
+	if(node)
+	{
+		node->color = BLACK;
+	}
+
+	return index;//返回root节点
+}
+
 /*左旋函数*/
 static RB_Tree RB_Rotate_Left(RB_Tree node, RB_Tree index)
 {
@@ -293,9 +569,14 @@ void PostOrder(RB_Tree tree)
 
 int main(void)
 {
-	int array[10] = {58,36,51,23,159,236,95,75,66,1};
-	int i;
+	//int array[10] = {58,36,51,23,159,236,95,75,66,1};
+	//int array[12] = {12,1,9,2,0,11,7,19,4,15,18,5};
+	int array[10] = {1,2,3,4,5,6,7,8,9,10};
+	int i,
+		del,
+		choose;
 	RB_Tree tree = NULL;
+
 	for(i = 0; i < 10; i++)
 	{
 		tree = RB_Insert(array[i],tree);
@@ -309,6 +590,45 @@ int main(void)
 		printf("\n\n");
 	}
 
+	while(1)
+	{
+		printf("1.exit\n");
+		printf("2.delete\n");
+		printf("3.preorder\n");
+		printf("4.inorder\n");
+		printf("5.postorder\n");
+		printf("0.show all(3.+4.+5.)\n");
+		scanf("%d",&choose);
+
+		switch(choose)
+		{
+			case 1:exit(0);
+				   break;
+			case 2:printf("which?\n");
+				   scanf("%d",&del);
+				   tree = RB_Delete(del, tree);
+				   break;
+			case 3:PreOrder(tree);
+				   puts("");
+				   break;
+			case 4:InOrder(tree);
+				   puts("");
+				   break;
+			case 5:PostOrder(tree);
+				   puts("");
+				   break;
+			case 0:printf("先序输出：");
+				   PreOrder(tree);
+				   printf("\n中序输出：");
+				   InOrder(tree);
+				   printf("\n后序输出：");
+				   PostOrder(tree);
+				   printf("\n\n");
+				   break;
+			default:puts("WRONG CHOOSE\n\n");
+					sleep(1);
+		}
+	}
 
 	return 0;
 }
